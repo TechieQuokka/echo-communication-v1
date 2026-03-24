@@ -129,8 +129,10 @@ cd echo-communication_v1
 ### 인증
 
 ```
-register <username> <password>    계정 생성
-login    <username> <password>    로그인
+register <username> <password>              계정 생성
+login    <username> <password>              로그인
+passwd   <username> <old_pw> <new_pw>       비밀번호 변경
+check    <username>                         사용자 존재 여부 확인
 ```
 
 ### 채팅 서버 연결
@@ -160,7 +162,7 @@ send <text>    메시지 전송
 ```
 state          현재 세션 상태 확인 (로그인/연결/방 정보)
 disconnect     채팅 서버 연결 해제
-help           명령어 목록 표시
+help           auth 모듈 명령어 목록 표시 (모듈이 직접 응답)
 quit / exit    종료
 Ctrl+C         강제 종료
 PageUp/Down    메시지 스크롤
@@ -176,8 +178,10 @@ login david secret123
 connect ws://127.0.0.1:55001
 join general
 hello everyone!
-hello everyone!
+how is everyone?
+leave
 join dev
+let's talk dev stuff
 leave
 disconnect
 ```
@@ -190,7 +194,7 @@ disconnect
 |-----|---------|
 | `connect` | 로그인 상태 |
 | `join`, `leave`, `send`, `list`, `disconnect` | `connect` 완료 |
-| 나머지 | 없음 |
+| `register`, `login`, `passwd`, `check`, `help`, `state` | 없음 |
 
 조건 미충족 시 `✗ NOT_LOGGED_IN` 또는 `✗ NOT_CONNECTED` 오류가 표시됩니다.
 
