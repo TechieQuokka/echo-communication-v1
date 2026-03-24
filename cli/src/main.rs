@@ -192,6 +192,12 @@ fn handle_key(
                 return true;
             }
 
+            if input == "/clear" {
+                state.messages.clear();
+                state.scroll_offset = 0;
+                return false;
+            }
+
             // 슬래시 없으면 채팅 메시지로 바로 처리
             if !input.starts_with('/') {
                 if state.current_room.is_some() {
