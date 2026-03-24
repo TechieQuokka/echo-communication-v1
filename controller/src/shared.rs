@@ -61,8 +61,11 @@ impl Shared {
         let response = rx.recv().map_err(|e| e.to_string())?;
         self.pending.lock().unwrap().remove(&id);
 
-        if let Some(err) = response["error"].as_str() {
-            return Err(err.to_string());
+        eprintln!("[send_and_wait] to={} type={} response={}", to, msg_type, response);
+
+        if !response["error"].is_null() {
+            let code = response["error"]["code"].as_str().unwrap_or("ERROR");
+            return Err(code.to_string());
         }
 
         Ok(response["payload"].clone())

@@ -41,10 +41,10 @@ fn main() {
     eprintln!("[ctrl] daemon 인증 완료");
 
     // ── 모듈 구독 + 시작 ─────────────────────────────────────────
-    init_module(&shared, AUTH_MODULE, config.auth_module_path.as_deref())
+    init_module(&shared, AUTH_MODULE, config.auth_module_path.as_deref(), Some(config.auth_config.clone()))
         .unwrap_or_else(|e| panic!("auth 모듈 초기화 실패: {}", e));
 
-    init_module(&shared, CHAT_MODULE, config.chat_module_path.as_deref())
+    init_module(&shared, CHAT_MODULE, config.chat_module_path.as_deref(), None)
         .unwrap_or_else(|e| panic!("chat 모듈 초기화 실패: {}", e));
 
     // ── 버스 구독 (채팅 이벤트) ──────────────────────────────────
@@ -85,30 +85,33 @@ fn main() {
     }
 }
 
-/// 모듈 구독 후 stopped 상태이면 시작
-fn init_module(shared: &Arc<Shared>, name: &str, path: Option<&str>) -> Result<(), String> {
-    let resp = shared.send_and_wait("system", "daemon", json!({
+/// 모듈 시작 후 구독
+fn init_module(shared: &Arc<Shared>, name: &str, path: Option<&str>, config: Option<serde_json::Value>) -> Result<(), String> {
+    let mut payload = json!({
+        "action": "module.start",
+        "name": name,
+    });
+    if let Some(p) = path {
+        payload["path"] = json!(p);
+        payload["type"] = json!("persistent");
+    }
+    if let Some(cfg) = config {
+        if !cfg.is_null() {
+            payload["config"] = cfg;
+        }
+    }
+    match shared.send_and_wait("system", "daemon", payload) {
+        Ok(_) => eprintln!("[ctrl] 모듈 '{}' 시작됨", name),
+        Err(e) if e == "MODULE_ALREADY_RUNNING" => eprintln!("[ctrl] 모듈 '{}' 이미 실행 중", name),
+        Err(e) => return Err(e),
+    }
+
+    shared.send_and_wait("system", "daemon", json!({
         "action": "subscribe",
         "module": name,
     }))?;
 
-    let status = resp["status"].as_str().unwrap_or("unknown");
-    eprintln!("[ctrl] 모듈 '{}' 상태: {}", name, status);
-
-    if status == "stopped" {
-        let mut payload = json!({ "action": "module.start", "name": name });
-        if let Some(p) = path {
-            payload["path"] = json!(p);
-            payload["type"] = json!("demand");
-        }
-        match shared.send_and_wait("system", "daemon", payload) {
-            Ok(_) => {}
-            Err(e) if e == "MODULE_ALREADY_RUNNING" => {}
-            Err(e) => return Err(e),
-        }
-        eprintln!("[ctrl] 모듈 '{}' 시작됨", name);
-    }
-
+    eprintln!("[ctrl] 모듈 '{}' 구독 완료", name);
     Ok(())
 }
 
@@ -208,9 +211,17 @@ fn run_cli_session(stream: TcpStream, shared: Arc<Shared>) {
         let id = cmd["id"].as_str().unwrap_or("").to_string();
         let action = cmd["action"].as_str().unwrap_or("").to_string();
 
+        eprintln!("[cli→ctrl] id={} action={}", id, action);
+
         let response = match handler::handle(&shared, &action, &cmd) {
-            Ok(data) => json!({ "id": id, "type": "response", "data": data }),
-            Err((code, msg)) => json!({ "id": id, "type": "error", "code": code, "message": msg }),
+            Ok(data) => {
+                eprintln!("[ctrl→cli] id={} ok", id);
+                json!({ "id": id, "type": "response", "data": data })
+            }
+            Err((code, msg)) => {
+                eprintln!("[ctrl→cli] id={} err code={} msg={}", id, code, msg);
+                json!({ "id": id, "type": "error", "code": code, "message": msg })
+            }
         };
 
         shared.write_to_cli(&response);

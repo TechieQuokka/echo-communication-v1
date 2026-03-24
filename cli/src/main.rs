@@ -342,14 +342,18 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
                 display_state(state, &data);
             }
             // help 응답 (auth + chat 섹션)
-            else if data.get("auth").is_some() && data.get("chat").is_some() {
-                for (section, key) in [("[ auth ]", "auth"), ("[ chat ]", "chat")] {
-                    state.push_sys(section);
-                    if let Some(arr) = data[key].as_array() {
-                        for item in arr {
-                            if let (Some(cmd), Some(desc)) = (item["command"].as_str(), item["description"].as_str()) {
-                                let args = item["args"].as_str().unwrap_or("");
-                                state.push_sys(&format!("  {:12} {:35} {}", cmd, args, desc));
+            else if !data["auth"].is_null() || !data["chat"].is_null() {
+                for (section, label) in [("auth", "── auth ──"), ("chat", "── chat ──")] {
+                    if let Some(cmds) = data[section].as_array() {
+                        state.push_sys(label);
+                        for cmd in cmds {
+                            let name = cmd["command"].as_str().unwrap_or("");
+                            let args = cmd["args"].as_str().unwrap_or("");
+                            let desc = cmd["description"].as_str().unwrap_or("");
+                            if args.is_empty() {
+                                state.push_sys(&format!("  /{} — {}", name, desc));
+                            } else {
+                                state.push_sys(&format!("  /{} {} — {}", name, args, desc));
                             }
                         }
                     }
