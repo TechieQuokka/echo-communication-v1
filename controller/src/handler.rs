@@ -31,6 +31,8 @@ pub fn handle(shared: &Arc<Shared>, action: &str, cmd: &Value) -> CmdResult {
         "list"       => handle_list(shared),
         "state"      => handle_state(shared),
         "disconnect" => handle_disconnect(shared),
+        "passwd"     => handle_passwd(shared, cmd),
+        "check"      => handle_check(shared, cmd),
         "help"       => handle_help(shared),
         _ => err("UNKNOWN_ACTION", &format!("unknown action: {}", action)),
     }
@@ -188,11 +190,47 @@ fn handle_disconnect(shared: &Arc<Shared>) -> CmdResult {
     Ok(data)
 }
 
-fn handle_help(shared: &Arc<Shared>) -> CmdResult {
+fn handle_passwd(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
+    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
+    let old_password = cmd["old_password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing old_password".to_string()))?;
+    let new_password = cmd["new_password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing new_password".to_string()))?;
+
     let data = shared
+        .send_and_wait("command", "auth", json!({
+            "action": "passwd",
+            "username": username,
+            "old_password": old_password,
+            "new_password": new_password,
+        }))
+        .map_err(daemon_err)?;
+
+    Ok(data)
+}
+
+fn handle_check(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
+    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
+
+    let data = shared
+        .send_and_wait("command", "auth", json!({
+            "action": "check",
+            "username": username,
+        }))
+        .map_err(daemon_err)?;
+
+    Ok(data)
+}
+
+fn handle_help(shared: &Arc<Shared>) -> CmdResult {
+    let auth_help = shared
         .send_and_wait("command", "auth", json!({ "action": "help" }))
         .map_err(daemon_err)?;
-    Ok(data)
+    let chat_help = shared
+        .send_and_wait("command", "echo_client_chat", json!({ "action": "help" }))
+        .map_err(daemon_err)?;
+    Ok(json!({
+        "auth": auth_help,
+        "chat": chat_help,
+    }))
 }
 
 fn require_chat_connected(shared: &Arc<Shared>) -> CmdResult {

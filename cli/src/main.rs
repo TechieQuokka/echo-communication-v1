@@ -248,6 +248,16 @@ fn parse_command(input: &str, state: &mut AppState) -> Option<Value> {
             if parts.len() < 3 { state.push_err("USAGE", "login <username> <password>"); return None; }
             json!({ "action": "login", "username": parts[1], "password": parts[2] })
         }
+        "passwd" => {
+            if parts.len() < 3 { state.push_err("USAGE", "passwd <username> <old_password> <new_password>"); return None; }
+            let sub: Vec<&str> = input.splitn(4, ' ').collect();
+            if sub.len() < 4 { state.push_err("USAGE", "passwd <username> <old_password> <new_password>"); return None; }
+            json!({ "action": "passwd", "username": sub[1], "old_password": sub[2], "new_password": sub[3] })
+        }
+        "check" => {
+            if parts.len() < 2 { state.push_err("USAGE", "check <username>"); return None; }
+            json!({ "action": "check", "username": parts[1] })
+        }
         "connect" => {
             if parts.len() < 2 { state.push_err("USAGE", "connect <ws_url>"); return None; }
             json!({ "action": "connect", "server_url": parts[1] })
@@ -256,6 +266,7 @@ fn parse_command(input: &str, state: &mut AppState) -> Option<Value> {
             if parts.len() < 2 { state.push_err("USAGE", "join <room>"); return None; }
             json!({ "action": "join", "room": parts[1] })
         }
+        "help"       => json!({ "action": "help" }),
         "leave"      => json!({ "action": "leave" }),
         "list"       => json!({ "action": "list" }),
         "state"      => json!({ "action": "state" }),
@@ -289,6 +300,18 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
                 state.username = Some(username.to_string());
                 state.push_ok(&format!("logged in as {}", username));
             }
+            // passwd 응답
+            else if data.get("username").is_some() && data.as_object().map(|o| o.len()) == Some(1) {
+                state.push_ok("password changed");
+            }
+            // check 응답
+            else if let Some(exists) = data["exists"].as_bool() {
+                if exists {
+                    state.push_ok("user exists");
+                } else {
+                    state.push_sys("user does not exist");
+                }
+            }
             // connect 응답
             else if data["status"].as_str() == Some("ok") && data.get("uuid").is_some() {
                 state.push_ok("connecting to chat server...");
@@ -302,14 +325,17 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
             else if data.get("logged_in").is_some() {
                 display_state(state, &data);
             }
-            // 배열 응답 (help 등)
-            else if let Some(arr) = data.as_array() {
-                for item in arr {
-                    if let (Some(cmd), Some(desc)) = (item["command"].as_str(), item["description"].as_str()) {
-                        let args = item["args"].as_str().unwrap_or("");
-                        state.push_sys(&format!("  {:10} {:40} {}", cmd, args, desc));
-                    } else {
-                        state.push_sys(&format!("  {}", item));
+            // help 응답 (auth + chat 섹션)
+            else if data.get("auth").is_some() && data.get("chat").is_some() {
+                for (section, key) in [("[ auth ]", "auth"), ("[ chat ]", "chat")] {
+                    state.push_sys(section);
+                    if let Some(arr) = data[key].as_array() {
+                        for item in arr {
+                            if let (Some(cmd), Some(desc)) = (item["command"].as_str(), item["description"].as_str()) {
+                                let args = item["args"].as_str().unwrap_or("");
+                                state.push_sys(&format!("  {:12} {:35} {}", cmd, args, desc));
+                            }
+                        }
                     }
                 }
             }
