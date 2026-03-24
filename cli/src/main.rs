@@ -192,11 +192,6 @@ fn handle_key(
                 return true;
             }
 
-            if input == "help" {
-                show_help(state);
-                return false;
-            }
-
             match parse_command(&input, state) {
                 Some(payload) => {
                     *id_counter += 1;
@@ -307,6 +302,17 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
             else if data.get("logged_in").is_some() {
                 display_state(state, &data);
             }
+            // 배열 응답 (help 등)
+            else if let Some(arr) = data.as_array() {
+                for item in arr {
+                    if let (Some(cmd), Some(desc)) = (item["command"].as_str(), item["description"].as_str()) {
+                        let args = item["args"].as_str().unwrap_or("");
+                        state.push_sys(&format!("  {:10} {:40} {}", cmd, args, desc));
+                    } else {
+                        state.push_sys(&format!("  {}", item));
+                    }
+                }
+            }
             // 그 외 데이터가 있으면 출력
             else if !data.is_null() {
                 state.push(format!("  {}", data));
@@ -401,25 +407,6 @@ fn display_state(state: &mut AppState, data: &Value) {
         data["chat_connected"].as_bool().unwrap_or(false),
         data["current_room"].as_str().unwrap_or("none"),
     ));
-}
-
-fn show_help(state: &mut AppState) {
-    for line in [
-        "commands:",
-        "  register <user> <pass>   - create account",
-        "  login <user> <pass>      - sign in",
-        "  connect <ws_url>         - connect to chat server",
-        "  join <room>              - join a room",
-        "  leave                    - leave current room",
-        "  send <text>              - send message (or just type when in a room)",
-        "  list                     - list rooms",
-        "  state                    - show session state",
-        "  disconnect               - disconnect from chat",
-        "  quit / exit / Ctrl+C     - exit",
-        "  PageUp/PageDown          - scroll messages",
-    ] {
-        state.push_sys(line);
-    }
 }
 
 // ── 컨트롤러로 JSON 전송 ─────────────────────────────────────────────────────

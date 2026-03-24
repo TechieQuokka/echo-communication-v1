@@ -31,6 +31,7 @@ pub fn handle(shared: &Arc<Shared>, action: &str, cmd: &Value) -> CmdResult {
         "list"       => handle_list(shared),
         "state"      => handle_state(shared),
         "disconnect" => handle_disconnect(shared),
+        "help"       => handle_help(shared),
         _ => err("UNKNOWN_ACTION", &format!("unknown action: {}", action)),
     }
 }
@@ -184,6 +185,13 @@ fn handle_disconnect(shared: &Arc<Shared>) -> CmdResult {
         sess.current_room = None;
     }
 
+    Ok(data)
+}
+
+fn handle_help(shared: &Arc<Shared>) -> CmdResult {
+    let data = shared
+        .send_and_wait("command", "auth", json!({ "action": "help" }))
+        .map_err(daemon_err)?;
     Ok(data)
 }
 
