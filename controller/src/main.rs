@@ -79,6 +79,11 @@ fn main() {
         run_cli_session(cli_reader, Arc::clone(&shared));
 
         // CLI 연결 종료 처리
+        let is_chat_connected = shared.session.lock().unwrap().chat_connected;
+        if is_chat_connected {
+            let _ = shared.send_and_wait("command", CHAT_MODULE, json!({ "action": "disconnect" }));
+            eprintln!("[ctrl] chat disconnect 완료");
+        }
         *shared.cli_writer.lock().unwrap() = None;
         *shared.session.lock().unwrap() = session::Session::new();
         shared.pending.lock().unwrap().clear();
