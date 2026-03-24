@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "echo-communication"
-version = "1.0.11"
+version = "1.0.14"
 dependencies = [
  "ctrlc",
  "serde",
@@ -170,11 +170,12 @@ dependencies = [
 
 [[package]]
 name = "echo-communication-cli"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "crossterm",
  "ratatui",
  "serde_json",
+ "unicode-width 0.2.0",
  "uuid",
 ]
 

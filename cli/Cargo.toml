@@ -1,6 +1,6 @@
 [package]
 name = "echo-communication-cli"
-version = "1.0.6"
+version = "1.0.8"
 edition = "2021"
 
 [[bin]]
@@ -8,7 +8,8 @@ name = "echo-communication-cli"
 path = "src/main.rs"
 
 [dependencies]
-ratatui    = "0.29"
-crossterm  = "0.28"
-serde_json = "1"
-uuid       = { version = "1", features = ["v4"] }
+ratatui         = "0.29"
+crossterm       = "0.28"
+serde_json      = "1"
+uuid            = { version = "1", features = ["v4"] }
+unicode-width   = "0.2"

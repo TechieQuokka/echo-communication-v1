@@ -19,6 +19,15 @@ fn daemon_err(e: String) -> (String, String) {
     (e.clone(), e)
 }
 
+/// CLI cmd에서 module payload를 만든다.
+/// CLI 전용 필드(id, action)를 제거하고 module action으로 교체.
+fn cmd_payload(cmd: &Value, module_action: &str) -> Value {
+    let mut map = cmd.as_object().cloned().unwrap_or_default();
+    map.remove("id");
+    map.insert("action".to_string(), json!(module_action));
+    Value::Object(map)
+}
+
 pub fn handle(shared: &Arc<Shared>, action: &str, cmd: &Value) -> CmdResult {
     match action {
         "auth.register"    => handle_register(shared, cmd),
@@ -40,35 +49,19 @@ pub fn handle(shared: &Arc<Shared>, action: &str, cmd: &Value) -> CmdResult {
 }
 
 fn handle_register(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
-    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
-    let password = cmd["password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing password".to_string()))?;
-
-    let data = shared
-        .send_and_wait("command", "auth", json!({
-            "action": "register",
-            "username": username,
-            "password": password,
-        }))
-        .map_err(daemon_err)?;
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "auth", cmd_payload(cmd, "register"))
+        .map_err(daemon_err)
 }
 
 fn handle_login(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
-    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
-    let password = cmd["password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing password".to_string()))?;
-
     let data = shared
-        .send_and_wait("command", "auth", json!({
-            "action": "login",
-            "username": username,
-            "password": password,
-        }))
+        .send_and_wait("command", "auth", cmd_payload(cmd, "login"))
         .map_err(daemon_err)?;
 
     {
         let mut sess = shared.session.lock().unwrap();
-        sess.user_id = data["id"].as_str().map(str::to_string);
+        sess.user_id  = data["id"].as_str().map(str::to_string);
         sess.username = data["username"].as_str().map(str::to_string);
     }
 
@@ -85,58 +78,26 @@ fn handle_connect(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
         None => return err("NOT_LOGGED_IN", "login required before connecting to chat"),
     };
 
-    let server_url = cmd["server_url"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing server_url".to_string()))?;
+    let mut payload = cmd_payload(cmd, "connect");
+    payload["nickname"] = json!(username);
 
-    let data = shared
-        .send_and_wait("command", "echo_client_chat", json!({
-            "action": "connect",
-            "server_url": server_url,
-            "nickname": username,
-        }))
-        .map_err(daemon_err)?;
-
-    {
-        let mut sess = shared.session.lock().unwrap();
-        sess.chat_connected = true;
-    }
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "echo_client_chat", payload)
+        .map_err(daemon_err)
 }
 
 fn handle_join(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
     require_chat_connected(shared)?;
-
-    let room = cmd["room"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing room".to_string()))?;
-
-    let data = shared
-        .send_and_wait("command", "echo_client_chat", json!({
-            "action": "join",
-            "room": room,
-        }))
-        .map_err(daemon_err)?;
-
-    // Optimistic update; confirmed via echo_client_chat.joined event
-    {
-        let mut sess = shared.session.lock().unwrap();
-        sess.current_room = Some(room.to_string());
-    }
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "echo_client_chat", cmd_payload(cmd, "join"))
+        .map_err(daemon_err)
 }
 
 fn handle_send(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
     require_chat_connected(shared)?;
-
-    let text = cmd["text"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing text".to_string()))?;
-
-    let data = shared
-        .send_and_wait("command", "echo_client_chat", json!({
-            "action": "send",
-            "text": text,
-        }))
-        .map_err(daemon_err)?;
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "echo_client_chat", cmd_payload(cmd, "send"))
+        .map_err(daemon_err)
 }
 
 fn handle_leave(shared: &Arc<Shared>) -> CmdResult {
@@ -146,32 +107,26 @@ fn handle_leave(shared: &Arc<Shared>) -> CmdResult {
         .send_and_wait("command", "echo_client_chat", json!({ "action": "leave" }))
         .map_err(daemon_err)?;
 
-    {
-        let mut sess = shared.session.lock().unwrap();
-        sess.current_room = None;
-    }
+    shared.session.lock().unwrap().current_room = None;
 
     Ok(data)
 }
 
 fn handle_list(shared: &Arc<Shared>) -> CmdResult {
     require_chat_connected(shared)?;
-
-    let data = shared
+    shared
         .send_and_wait("command", "echo_client_chat", json!({ "action": "list" }))
-        .map_err(daemon_err)?;
-
-    Ok(data)
+        .map_err(daemon_err)
 }
 
 fn handle_state(shared: &Arc<Shared>) -> CmdResult {
     let sess = shared.session.lock().unwrap();
     Ok(json!({
-        "logged_in": sess.username.is_some(),
-        "user_id": sess.user_id,
-        "username": sess.username,
+        "logged_in":     sess.username.is_some(),
+        "user_id":       sess.user_id,
+        "username":      sess.username,
         "chat_connected": sess.chat_connected,
-        "current_room": sess.current_room,
+        "current_room":  sess.current_room,
     }))
 }
 
@@ -185,54 +140,28 @@ fn handle_disconnect(shared: &Arc<Shared>) -> CmdResult {
     {
         let mut sess = shared.session.lock().unwrap();
         sess.chat_connected = false;
-        sess.current_room = None;
+        sess.current_room   = None;
     }
 
     Ok(data)
 }
 
 fn handle_passwd(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
-    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
-    let old_password = cmd["old_password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing old_password".to_string()))?;
-    let new_password = cmd["new_password"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing new_password".to_string()))?;
-
-    let data = shared
-        .send_and_wait("command", "auth", json!({
-            "action": "passwd",
-            "username": username,
-            "old_password": old_password,
-            "new_password": new_password,
-        }))
-        .map_err(daemon_err)?;
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "auth", cmd_payload(cmd, "passwd"))
+        .map_err(daemon_err)
 }
 
 fn handle_check(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
-    let username = cmd["username"].as_str().ok_or_else(|| ("MISSING_FIELD".to_string(), "missing username".to_string()))?;
-
-    let data = shared
-        .send_and_wait("command", "auth", json!({
-            "action": "check",
-            "username": username,
-        }))
-        .map_err(daemon_err)?;
-
-    Ok(data)
+    shared
+        .send_and_wait("command", "auth", cmd_payload(cmd, "check"))
+        .map_err(daemon_err)
 }
 
 fn handle_auth_list(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
-    let mut payload = json!({ "action": "list" });
-    if let Some(start) = cmd["start"].as_str() {
-        payload["start"] = json!(start);
-    }
-    if let Some(end) = cmd["end"].as_str() {
-        payload["end"] = json!(end);
-    }
-    let data = shared
-        .send_and_wait("command", "auth", payload)
-        .map_err(daemon_err)?;
-    Ok(data)
+    shared
+        .send_and_wait("command", "auth", cmd_payload(cmd, "list"))
+        .map_err(daemon_err)
 }
 
 fn handle_help(shared: &Arc<Shared>) -> CmdResult {

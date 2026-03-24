@@ -256,7 +256,7 @@ fn run_cli_session(stream: TcpStream, shared: Arc<Shared>) {
         let response = match handler::handle(&shared, &action, &cmd) {
             Ok(data) => {
                 eprintln!("[ctrl→cli] id={} ok", id);
-                json!({ "id": id, "type": "response", "data": data })
+                json!({ "id": id, "type": "response", "action": action, "data": data })
             }
             Err((code, msg)) => {
                 eprintln!("[ctrl→cli] id={} err code={} msg={}", id, code, msg);

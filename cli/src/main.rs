@@ -3,6 +3,8 @@ use std::net::TcpStream;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+use unicode_width::UnicodeWidthStr;
+
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
@@ -67,7 +69,7 @@ impl AppState {
 // ── 소켓 → 앱으로 전달하는 이벤트 ──────────────────────────────────────────
 
 enum CtrlEvent {
-    Response { _id: String, data: Value },
+    Response { _id: String, action: String, data: Value },
     Error { _id: String, code: String, message: String },
     ChatEvent { topic: String, data: Value },
     Disconnected,
@@ -108,6 +110,7 @@ fn main() {
                 let evt = match msg["type"].as_str().unwrap_or("") {
                     "response" => CtrlEvent::Response {
                         _id: msg["id"].as_str().unwrap_or("").to_string(),
+                        action: msg["action"].as_str().unwrap_or("").to_string(),
                         data: msg["data"].clone(),
                     },
                     "error" => CtrlEvent::Error {
@@ -188,7 +191,7 @@ fn handle_key(
             if input.is_empty() { return false; }
             state.input.clear();
 
-            if input == "quit" || input == "exit" {
+            if input == "/quit" || input == "/exit" {
                 return true;
             }
 
@@ -331,59 +334,75 @@ fn parse_command(input: &str, state: &mut AppState) -> Option<Value> {
 
 fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
     match evt {
-        CtrlEvent::Response { data, _id: _ } => {
-            // 로그인 응답: username 저장
-            if let Some(username) = data["username"].as_str() {
-                state.username = Some(username.to_string());
-                state.push_ok(&format!("logged in as {}", username));
-            }
-            // passwd 응답
-            else if data.get("username").is_some() && data.as_object().map(|o| o.len()) == Some(1) {
-                state.push_ok("password changed");
-            }
-            // check 응답
-            else if let Some(exists) = data["exists"].as_bool() {
-                if exists {
-                    state.push_ok("user exists");
-                } else {
-                    state.push_sys("user does not exist");
+        CtrlEvent::Response { action, data, _id: _ } => {
+            match action.as_str() {
+                "auth.register" => {
+                    let username = data["username"].as_str().unwrap_or("?");
+                    state.push_ok(&format!("registered: {}", username));
                 }
-            }
-            // connect 응답
-            else if data["status"].as_str() == Some("ok") && data.get("uuid").is_some() {
-                state.push_ok("connecting to chat server...");
-                state.chat_connected = true;
-            }
-            // 그 외 ok 응답
-            else if data["status"].as_str() == Some("ok") {
-                state.push_ok("ok");
-            }
-            // state 응답
-            else if data.get("logged_in").is_some() {
-                display_state(state, &data);
-            }
-            // help 응답 (auth + chat 섹션)
-            else if !data["auth"].is_null() || !data["chat"].is_null() {
-                for (section, label) in [("auth", "── auth ──"), ("chat", "── chat ──")] {
-                    if let Some(cmds) = data[section].as_array() {
-                        state.push_sys(label);
-                        for cmd in cmds {
-                            let name = cmd["command"].as_str().unwrap_or("");
-                            if name == "help" { continue; }
-                            let args = cmd["args"].as_str().unwrap_or("");
-                            let desc = cmd["description"].as_str().unwrap_or("");
-                            if args.is_empty() {
-                                state.push_sys(&format!("  /{}.{} — {}", section, name, desc));
-                            } else {
-                                state.push_sys(&format!("  /{}.{} {} — {}", section, name, args, desc));
+                "auth.login" => {
+                    let username = data["username"].as_str().unwrap_or("?");
+                    state.username = Some(username.to_string());
+                    state.push_ok(&format!("logged in as {}", username));
+                }
+                "auth.passwd" => {
+                    state.push_ok("password changed");
+                }
+                "auth.check" => {
+                    if data["exists"].as_bool().unwrap_or(false) {
+                        state.push_ok("user exists");
+                    } else {
+                        state.push_sys("user does not exist");
+                    }
+                }
+                "auth.list" => {
+                    if let Some(users) = data.as_array() {
+                        if users.is_empty() {
+                            state.push_sys("no users");
+                        } else {
+                            for u in users {
+                                state.push_sys(&format!(
+                                    "  {} ({})",
+                                    u["username"].as_str().unwrap_or("?"),
+                                    u["created_at"].as_str().unwrap_or("?"),
+                                ));
                             }
                         }
                     }
                 }
-            }
-            // 그 외 데이터가 있으면 출력
-            else if !data.is_null() {
-                state.push(format!("  {}", data));
+                "chat.connect" => {
+                    state.chat_connected = true;
+                    state.push_ok("connecting to chat server...");
+                }
+                "chat.join" | "chat.leave" | "chat.send" | "chat.list" | "chat.disconnect" => {
+                    state.push_ok("ok");
+                }
+                "chat.state" | "state" => {
+                    display_state(state, &data);
+                }
+                "help" => {
+                    for (section, label) in [("auth", "── auth ──"), ("chat", "── chat ──")] {
+                        if let Some(cmds) = data[section].as_array() {
+                            state.push_sys(label);
+                            for cmd in cmds {
+                                let name = cmd["command"].as_str().unwrap_or("");
+                                if name == "help" { continue; }
+                                let args = cmd["args"].as_str().unwrap_or("");
+                                let desc = cmd["description"].as_str().unwrap_or("");
+                                if args.is_empty() {
+                                    state.push_sys(&format!("  /{}.{} — {}", section, name, desc));
+                                } else {
+                                    state.push_sys(&format!("  /{}.{} {} — {}", section, name, args, desc));
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if !data.is_null() {
+                        state.push(format!("  {}", data));
+                    }
+                }
             }
         }
 
@@ -560,7 +579,7 @@ fn render(f: &mut ratatui::Frame, state: &AppState) {
     f.render_widget(input_widget, chunks[2]);
 
     // 커서 위치 설정
-    let cursor_x = chunks[2].x + 2 + state.input.len() as u16 + 1;
+    let cursor_x = chunks[2].x + 2 + UnicodeWidthStr::width(state.input.as_str()) as u16 + 1;
     let cursor_y = chunks[2].y + 1;
     if cursor_x < chunks[2].x + chunks[2].width - 1 {
         f.set_cursor_position((cursor_x, cursor_y));
