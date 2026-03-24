@@ -81,7 +81,7 @@ Controller가 실행 중이어야 합니다 (기본 `127.0.0.1:8888`).
 ```
 register <user> <pass>   계정 생성
 login <user> <pass>      로그인
-connect <ws_url>         채팅 서버 연결  (예: ws://localhost:8080/ws)
+connect <ws_url>         채팅 서버 연결  (예: ws://localhost:55001)
 join <room>              방 입장
 leave                    방 퇴장
 send <text>              메시지 전송 (방 입장 후 텍스트 입력만으로도 동작)
@@ -99,7 +99,7 @@ TCP JSON Lines 기반.
 **CLI → Controller:**
 ```json
 {"id": "1", "action": "login", "username": "david", "password": "1234"}
-{"id": "2", "action": "connect", "server_url": "ws://localhost:8080/ws"}
+{"id": "2", "action": "connect", "server_url": "ws://localhost:55001"}
 {"id": "3", "action": "join", "room": "general"}
 {"id": "4", "action": "send", "text": "hello!"}
 ```
