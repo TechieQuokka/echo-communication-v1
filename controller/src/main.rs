@@ -26,6 +26,9 @@ fn main() {
 
     let shared = Shared::new(daemon_stream, CONTROLLER_NAME);
 
+    // ── Daemon reader 스레드 (send_and_wait 전에 반드시 먼저 실행) ──
+    spawn_daemon_reader(daemon_reader, Arc::clone(&shared));
+
     // ── Daemon 인증 ──────────────────────────────────────────────
     shared
         .send_and_wait("system", "daemon", json!({
@@ -53,9 +56,6 @@ fn main() {
         .unwrap_or_else(|e| panic!("버스 구독 실패: {}", e));
 
     eprintln!("[ctrl] 모듈 준비 완료");
-
-    // ── Daemon reader 스레드 ─────────────────────────────────────
-    spawn_daemon_reader(daemon_reader, Arc::clone(&shared));
 
     // ── CLI TCP 리스너 ───────────────────────────────────────────
     let listener = TcpListener::bind(format!("0.0.0.0:{}", config.cli_port))
