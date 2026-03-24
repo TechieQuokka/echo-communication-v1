@@ -74,6 +74,8 @@ fn main() {
         let cli_reader = cli_stream.try_clone().expect("cli stream clone");
         *shared.cli_writer.lock().unwrap() = Some(BufWriter::new(cli_stream));
 
+        sync_chat_session(&shared);
+
         run_cli_session(cli_reader, Arc::clone(&shared));
 
         // CLI 연결 종료 처리
@@ -82,6 +84,16 @@ fn main() {
         shared.pending.lock().unwrap().clear();
 
         eprintln!("[ctrl] CLI 연결 종료, 다음 연결 대기 중 ...");
+    }
+}
+
+/// CLI 연결 시 chat 모듈 상태를 session에 동기화
+fn sync_chat_session(shared: &Arc<Shared>) {
+    if let Ok(state) = shared.send_and_wait("command", CHAT_MODULE, json!({ "action": "state" })) {
+        let mut sess = shared.session.lock().unwrap();
+        sess.chat_connected = state["connected"].as_bool().unwrap_or(false);
+        sess.current_room = state["current_room"].as_str().map(str::to_string);
+        eprintln!("[ctrl] chat 세션 동기화: connected={} room={:?}", sess.chat_connected, sess.current_room);
     }
 }
 
