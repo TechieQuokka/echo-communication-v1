@@ -65,7 +65,8 @@ impl Shared {
 
         if !response["error"].is_null() {
             let code = response["error"]["code"].as_str().unwrap_or("ERROR");
-            return Err(code.to_string());
+            let msg = response["error"]["message"].as_str().unwrap_or(code);
+            return Err(format!("{}:{}", code, msg));
         }
 
         Ok(response["payload"].clone())

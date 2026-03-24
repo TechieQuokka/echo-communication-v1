@@ -102,7 +102,7 @@ fn init_module(shared: &Arc<Shared>, name: &str, path: Option<&str>, config: Opt
     }
     match shared.send_and_wait("system", "daemon", payload) {
         Ok(_) => eprintln!("[ctrl] 모듈 '{}' 시작됨", name),
-        Err(e) if e == "MODULE_ALREADY_RUNNING" => eprintln!("[ctrl] 모듈 '{}' 이미 실행 중", name),
+        Err(e) if e.starts_with("MODULE_ALREADY_RUNNING") => eprintln!("[ctrl] 모듈 '{}' 이미 실행 중", name),
         Err(e) => return Err(e),
     }
 

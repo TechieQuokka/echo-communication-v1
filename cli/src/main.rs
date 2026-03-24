@@ -204,7 +204,7 @@ fn handle_key(
                     *id_counter += 1;
                     send_to_ctrl(writer, &json!({
                         "id": id_counter.to_string(),
-                        "action": "send",
+                        "action": "chat.send",
                         "text": input,
                     }));
                 } else {
@@ -257,48 +257,69 @@ fn handle_key(
 // ── 명령 파싱 ────────────────────────────────────────────────────────────────
 
 fn parse_command(input: &str, state: &mut AppState) -> Option<Value> {
-    let parts: Vec<&str> = input.splitn(3, ' ').collect();
-    let cmd = parts[0];
+    // 모듈 접두사 없는 특수 명령
+    match input.split_whitespace().next().unwrap_or("") {
+        "help"  => return Some(json!({ "action": "help" })),
+        "state" => return Some(json!({ "action": "state" })),
+        _ => {}
+    }
 
-    let payload = match cmd {
-        "register" => {
-            if parts.len() < 3 { state.push_err("USAGE", "register <username> <password>"); return None; }
-            json!({ "action": "register", "username": parts[1], "password": parts[2] })
+    // module.action [args...] 형식 파싱
+    let dot = match input.find('.') {
+        Some(p) => p,
+        None => {
+            state.push_err("UNKNOWN", &format!("unknown command: /{}. use /module.action format", input));
+            return None;
         }
-        "login" => {
-            if parts.len() < 3 { state.push_err("USAGE", "login <username> <password>"); return None; }
-            json!({ "action": "login", "username": parts[1], "password": parts[2] })
+    };
+
+    let module = &input[..dot];
+    let rest   = &input[dot + 1..];
+    let parts: Vec<&str> = rest.splitn(3, ' ').collect();
+    let action = parts[0];
+
+    let payload = match (module, action) {
+        // ── auth ──────────────────────────────────────────────────────────
+        ("auth", "register") => {
+            if parts.len() < 3 { state.push_err("USAGE", "/auth.register <username> <password>"); return None; }
+            json!({ "action": "auth.register", "username": parts[1], "password": parts[2] })
         }
-        "passwd" => {
-            if parts.len() < 3 { state.push_err("USAGE", "passwd <username> <old_password> <new_password>"); return None; }
-            let sub: Vec<&str> = input.splitn(4, ' ').collect();
-            if sub.len() < 4 { state.push_err("USAGE", "passwd <username> <old_password> <new_password>"); return None; }
-            json!({ "action": "passwd", "username": sub[1], "old_password": sub[2], "new_password": sub[3] })
+        ("auth", "login") => {
+            if parts.len() < 3 { state.push_err("USAGE", "/auth.login <username> <password>"); return None; }
+            json!({ "action": "auth.login", "username": parts[1], "password": parts[2] })
         }
-        "check" => {
-            if parts.len() < 2 { state.push_err("USAGE", "check <username>"); return None; }
-            json!({ "action": "check", "username": parts[1] })
+        ("auth", "passwd") => {
+            let sub: Vec<&str> = rest.splitn(4, ' ').collect();
+            if sub.len() < 4 { state.push_err("USAGE", "/auth.passwd <username> <old_pw> <new_pw>"); return None; }
+            json!({ "action": "auth.passwd", "username": sub[1], "old_password": sub[2], "new_password": sub[3] })
         }
-        "connect" => {
-            if parts.len() < 2 { state.push_err("USAGE", "connect <ws_url>"); return None; }
-            json!({ "action": "connect", "server_url": parts[1] })
+        ("auth", "check") => {
+            if parts.len() < 2 { state.push_err("USAGE", "/auth.check <username>"); return None; }
+            json!({ "action": "auth.check", "username": parts[1] })
         }
-        "join" => {
-            if parts.len() < 2 { state.push_err("USAGE", "join <room>"); return None; }
-            json!({ "action": "join", "room": parts[1] })
+        ("auth", "list") => {
+            json!({ "action": "auth.list" })
         }
-        "help"       => json!({ "action": "help" }),
-        "leave"      => json!({ "action": "leave" }),
-        "list"       => json!({ "action": "list" }),
-        "state"      => json!({ "action": "state" }),
-        "disconnect" => json!({ "action": "disconnect" }),
-        "send" => {
-            if parts.len() < 2 { state.push_err("USAGE", "send <text>"); return None; }
-            let text: Vec<&str> = input.splitn(2, ' ').collect();
-            json!({ "action": "send", "text": text.get(1).unwrap_or(&"") })
+        // ── chat ──────────────────────────────────────────────────────────
+        ("chat", "connect") => {
+            if parts.len() < 2 { state.push_err("USAGE", "/chat.connect <server_url>"); return None; }
+            json!({ "action": "chat.connect", "server_url": parts[1] })
         }
+        ("chat", "join") => {
+            if parts.len() < 2 { state.push_err("USAGE", "/chat.join <room>"); return None; }
+            json!({ "action": "chat.join", "room": parts[1] })
+        }
+        ("chat", "send") => {
+            if parts.len() < 2 { state.push_err("USAGE", "/chat.send <text>"); return None; }
+            let text: Vec<&str> = rest.splitn(2, ' ').collect();
+            json!({ "action": "chat.send", "text": text.get(1).unwrap_or(&"") })
+        }
+        ("chat", "leave")      => json!({ "action": "chat.leave" }),
+        ("chat", "list")       => json!({ "action": "chat.list" }),
+        ("chat", "state")      => json!({ "action": "chat.state" }),
+        ("chat", "disconnect") => json!({ "action": "chat.disconnect" }),
         _ => {
-            state.push_err("UNKNOWN", &format!("unknown command: /{}. type /help", cmd));
+            state.push_err("UNKNOWN", &format!("unknown command: /{}.{}. type /help", module, action));
             return None;
         }
     };
@@ -348,12 +369,13 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
                         state.push_sys(label);
                         for cmd in cmds {
                             let name = cmd["command"].as_str().unwrap_or("");
+                            if name == "help" { continue; }
                             let args = cmd["args"].as_str().unwrap_or("");
                             let desc = cmd["description"].as_str().unwrap_or("");
                             if args.is_empty() {
-                                state.push_sys(&format!("  /{} — {}", name, desc));
+                                state.push_sys(&format!("  /{}.{} — {}", section, name, desc));
                             } else {
-                                state.push_sys(&format!("  /{} {} — {}", name, args, desc));
+                                state.push_sys(&format!("  /{}.{} {} — {}", section, name, args, desc));
                             }
                         }
                     }

@@ -11,29 +11,30 @@ fn err(code: &str, msg: &str) -> CmdResult {
 }
 
 fn daemon_err(e: String) -> (String, String) {
-    // If daemon returned an error code (all-caps with underscores), pass it through.
-    // Otherwise wrap as DAEMON_ERROR.
-    if e.chars().all(|c| c.is_uppercase() || c == '_') {
-        (e.clone(), e)
-    } else {
-        ("DAEMON_ERROR".to_string(), e)
+    if let Some(pos) = e.find(':') {
+        let code = e[..pos].to_string();
+        let msg = e[pos + 1..].to_string();
+        return (code, msg);
     }
+    (e.clone(), e)
 }
 
 pub fn handle(shared: &Arc<Shared>, action: &str, cmd: &Value) -> CmdResult {
     match action {
-        "register"   => handle_register(shared, cmd),
-        "login"      => handle_login(shared, cmd),
-        "connect"    => handle_connect(shared, cmd),
-        "join"       => handle_join(shared, cmd),
-        "send"       => handle_send(shared, cmd),
-        "leave"      => handle_leave(shared),
-        "list"       => handle_list(shared),
-        "state"      => handle_state(shared),
-        "disconnect" => handle_disconnect(shared),
-        "passwd"     => handle_passwd(shared, cmd),
-        "check"      => handle_check(shared, cmd),
-        "help"       => handle_help(shared),
+        "auth.register"    => handle_register(shared, cmd),
+        "auth.login"       => handle_login(shared, cmd),
+        "auth.passwd"      => handle_passwd(shared, cmd),
+        "auth.check"       => handle_check(shared, cmd),
+        "auth.list"        => handle_auth_list(shared, cmd),
+        "chat.connect"     => handle_connect(shared, cmd),
+        "chat.join"        => handle_join(shared, cmd),
+        "chat.send"        => handle_send(shared, cmd),
+        "chat.leave"       => handle_leave(shared),
+        "chat.list"        => handle_list(shared),
+        "chat.state"       => handle_state(shared),
+        "chat.disconnect"  => handle_disconnect(shared),
+        "help"             => handle_help(shared),
+        "state"            => handle_state(shared),
         _ => err("UNKNOWN_ACTION", &format!("unknown action: {}", action)),
     }
 }
@@ -217,6 +218,20 @@ fn handle_check(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
         }))
         .map_err(daemon_err)?;
 
+    Ok(data)
+}
+
+fn handle_auth_list(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
+    let mut payload = json!({ "action": "list" });
+    if let Some(start) = cmd["start"].as_str() {
+        payload["start"] = json!(start);
+    }
+    if let Some(end) = cmd["end"].as_str() {
+        payload["end"] = json!(end);
+    }
+    let data = shared
+        .send_and_wait("command", "auth", payload)
+        .map_err(daemon_err)?;
     Ok(data)
 }
 
