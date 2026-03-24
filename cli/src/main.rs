@@ -403,6 +403,11 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
 
 fn handle_chat_event(state: &mut AppState, topic: &str, data: &Value) {
     match topic {
+        "controller.session_sync" => {
+            state.username = data["username"].as_str().map(str::to_string);
+            state.chat_connected = data["chat_connected"].as_bool().unwrap_or(false);
+            state.current_room = data["current_room"].as_str().map(str::to_string);
+        }
         "echo_client_chat.connected" => {
             state.chat_connected = true;
             state.push_ok("connected to chat server");

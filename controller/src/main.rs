@@ -57,6 +57,20 @@ fn main() {
 
     eprintln!("[ctrl] 모듈 준비 완료");
 
+    // ── 종료 시그널 핸들러 (SIGINT / SIGTERM) ────────────────────
+    {
+        let shared = Arc::clone(&shared);
+        ctrlc::set_handler(move || {
+            eprintln!("[ctrl] 종료 신호 수신");
+            let is_connected = shared.session.lock().unwrap().chat_connected;
+            if is_connected {
+                let _ = shared.send_and_wait("command", CHAT_MODULE, json!({ "action": "disconnect" }));
+                eprintln!("[ctrl] chat disconnect 완료");
+            }
+            std::process::exit(0);
+        }).expect("signal handler 등록 실패");
+    }
+
     // ── CLI TCP 리스너 ───────────────────────────────────────────
     let listener = TcpListener::bind(format!("0.0.0.0:{}", config.cli_port))
         .unwrap_or_else(|e| panic!("CLI 포트 바인딩 실패: {}", e));
@@ -75,21 +89,30 @@ fn main() {
         *shared.cli_writer.lock().unwrap() = Some(BufWriter::new(cli_stream));
 
         sync_chat_session(&shared);
+        push_state_to_cli(&shared);
 
         run_cli_session(cli_reader, Arc::clone(&shared));
 
-        // CLI 연결 종료 처리
-        let is_chat_connected = shared.session.lock().unwrap().chat_connected;
-        if is_chat_connected {
-            let _ = shared.send_and_wait("command", CHAT_MODULE, json!({ "action": "disconnect" }));
-            eprintln!("[ctrl] chat disconnect 완료");
-        }
+        // CLI 연결 종료 — 세션/chat 연결은 유지, CLI writer와 pending만 정리
         *shared.cli_writer.lock().unwrap() = None;
-        *shared.session.lock().unwrap() = session::Session::new();
         shared.pending.lock().unwrap().clear();
 
         eprintln!("[ctrl] CLI 연결 종료, 다음 연결 대기 중 ...");
     }
+}
+
+/// CLI 연결 직후 현재 세션 상태를 CLI에 전송
+fn push_state_to_cli(shared: &Arc<Shared>) {
+    let sess = shared.session.lock().unwrap();
+    shared.write_to_cli(&json!({
+        "type": "event",
+        "topic": "controller.session_sync",
+        "data": {
+            "username": sess.username,
+            "chat_connected": sess.chat_connected,
+            "current_room": sess.current_room,
+        },
+    }));
 }
 
 /// CLI 연결 시 chat 모듈 상태를 session에 동기화
