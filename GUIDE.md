@@ -81,8 +81,8 @@ cd echo-communication_v1
 >   "daemon_addr": "127.0.0.1:7777",
 >   "daemon_token": null,
 >   "cli_port": 8888,
->   "auth_module_path": "/절대경로/auth-module",
->   "chat_module_path": "/절대경로/echo-client-chat"
+>   "auth_module_path": "/home/david/Documents/rust/laboratory/module/auth-system_v1/target/debug/auth-module",
+>   "chat_module_path": "/home/david/Documents/rust/laboratory/module/echo-client-chat_v1/target/debug/echo-client-chat"
 > }
 > ```
 > `auth_module_path` / `chat_module_path`는 Daemon의 `daemon.yaml`에 모듈이 등록되어 있으면 생략 가능합니다.
