@@ -41,7 +41,7 @@ impl AppState {
             chat_connected: false,
             scroll_offset: 0,
         };
-        s.push_sys("echo-communication cli. type 'help' for commands.");
+        s.push_sys("echo-communication cli. type /help for commands.");
         s
     }
 
@@ -192,7 +192,22 @@ fn handle_key(
                 return true;
             }
 
-            match parse_command(&input, state) {
+            // 슬래시 없으면 채팅 메시지로 바로 처리
+            if !input.starts_with('/') {
+                if state.current_room.is_some() {
+                    *id_counter += 1;
+                    send_to_ctrl(writer, &json!({
+                        "id": id_counter.to_string(),
+                        "action": "send",
+                        "text": input,
+                    }));
+                } else {
+                    state.push_err("USAGE", "join a room first, or use /command");
+                }
+                return false;
+            }
+
+            match parse_command(input.trim_start_matches('/'), state) {
                 Some(payload) => {
                     *id_counter += 1;
                     let id = id_counter.to_string();
@@ -277,13 +292,8 @@ fn parse_command(input: &str, state: &mut AppState) -> Option<Value> {
             json!({ "action": "send", "text": text.get(1).unwrap_or(&"") })
         }
         _ => {
-            // 방에 있으면 자동으로 send
-            if state.current_room.is_some() {
-                json!({ "action": "send", "text": input })
-            } else {
-                state.push_err("UNKNOWN", &format!("unknown command: {}. type 'help'", cmd));
-                return None;
-            }
+            state.push_err("UNKNOWN", &format!("unknown command: /{}. type /help", cmd));
+            return None;
         }
     };
 
