@@ -342,7 +342,6 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
                 }
                 "auth.login" => {
                     let username = data["username"].as_str().unwrap_or("?");
-                    state.username = Some(username.to_string());
                     state.push_ok(&format!("logged in as {}", username));
                 }
                 "auth.passwd" => {
@@ -371,7 +370,6 @@ fn handle_ctrl_event(evt: CtrlEvent, state: &mut AppState) {
                     }
                 }
                 "chat.connect" => {
-                    state.chat_connected = true;
                     state.push_ok("connecting to chat server...");
                 }
                 "chat.join" | "chat.leave" | "chat.send" | "chat.list" | "chat.disconnect" => {

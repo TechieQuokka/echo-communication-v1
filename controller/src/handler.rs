@@ -65,6 +65,20 @@ fn handle_login(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
         sess.username = data["username"].as_str().map(str::to_string);
     }
 
+    // 세션 변화를 CLI에 이벤트로 알림
+    {
+        let sess = shared.session.lock().unwrap();
+        shared.write_to_cli(&json!({
+            "type": "event",
+            "topic": "controller.session_sync",
+            "data": {
+                "username": sess.username,
+                "chat_connected": sess.chat_connected,
+                "current_room": sess.current_room,
+            },
+        }));
+    }
+
     Ok(data)
 }
 
@@ -102,14 +116,9 @@ fn handle_send(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
 
 fn handle_leave(shared: &Arc<Shared>) -> CmdResult {
     require_chat_connected(shared)?;
-
-    let data = shared
+    shared
         .send_and_wait("command", "echo_client_chat", json!({ "action": "leave" }))
-        .map_err(daemon_err)?;
-
-    shared.session.lock().unwrap().current_room = None;
-
-    Ok(data)
+        .map_err(daemon_err)
 }
 
 fn handle_list(shared: &Arc<Shared>) -> CmdResult {
@@ -132,18 +141,9 @@ fn handle_state(shared: &Arc<Shared>) -> CmdResult {
 
 fn handle_disconnect(shared: &Arc<Shared>) -> CmdResult {
     require_chat_connected(shared)?;
-
-    let data = shared
+    shared
         .send_and_wait("command", "echo_client_chat", json!({ "action": "disconnect" }))
-        .map_err(daemon_err)?;
-
-    {
-        let mut sess = shared.session.lock().unwrap();
-        sess.chat_connected = false;
-        sess.current_room   = None;
-    }
-
-    Ok(data)
+        .map_err(daemon_err)
 }
 
 fn handle_passwd(shared: &Arc<Shared>, cmd: &Value) -> CmdResult {
